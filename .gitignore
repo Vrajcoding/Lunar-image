@@ -49,7 +49,6 @@ venv.bak/
 .env.production.local
 
 # Docker
-.dockerignore
 docker-compose.override.yml
 
 # OS Specific
@@ -77,3 +76,9 @@ logs/
 data/
 outputs/
 inputs/
+
+# ml-service local run + test output (job dirs written by the pipeline)
+ml-service/data/
+ml-service/data_test/
+ml-service/data_local/
+ml-service/test_data/
