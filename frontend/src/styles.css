@@ -188,6 +188,40 @@ body {
   word-break: break-all;
 }
 
+/* Optional PDS4/PDS3 detached-label fields — deliberately quieter than the
+   main dropzones since most uploads won't need them. */
+.label-grid {
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.label-file-field {
+  display: block;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.label-file-field:hover {
+  border-color: var(--primary);
+}
+
+.label-file-field input[type="file"] {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.label-file-field .file-preview-name {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+}
+
 .submit-btn-wrapper {
   text-align: center;
 }

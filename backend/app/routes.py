@@ -14,21 +14,45 @@ def health():
     return {"status": "ok", "service": "lunar-registration-backend"}
 
 @router.post("/register", response_model=RegisterAccepted)
-async def register(source: UploadFile = File(...), reference: UploadFile = File(...)):
+async def register(
+    source: UploadFile = File(...),
+    reference: UploadFile = File(...),
+    source_label: UploadFile | None = File(None),
+    reference_label: UploadFile | None = File(None),
+):
     job_id = str(uuid.uuid4())
     create_job(job_id)
 
     source_bytes = await source.read()
     reference_bytes = await reference.read()
+    source_label_bytes = await source_label.read() if source_label is not None else None
+    reference_label_bytes = await reference_label.read() if reference_label is not None else None
 
     asyncio.create_task(
-        process_job(job_id, source_bytes, source.filename, reference_bytes, reference.filename)
+        process_job(
+            job_id,
+            source_bytes, source.filename,
+            reference_bytes, reference.filename,
+            source_label_bytes, source_label.filename if source_label is not None else None,
+            reference_label_bytes, reference_label.filename if reference_label is not None else None,
+        )
     )
     return RegisterAccepted(job_id=job_id, status="processing")
 
-async def process_job(job_id: str, source_bytes: bytes, source_name: str, reference_bytes: bytes, reference_name: str):
+async def process_job(
+    job_id: str,
+    source_bytes: bytes, source_name: str,
+    reference_bytes: bytes, reference_name: str,
+    source_label_bytes: bytes | None = None, source_label_name: str | None = None,
+    reference_label_bytes: bytes | None = None, reference_label_name: str | None = None,
+):
     try:
-        result = await call_ml_register(source_bytes, source_name, reference_bytes, reference_name)
+        result = await call_ml_register(
+            source_bytes, source_name,
+            reference_bytes, reference_name,
+            source_label_bytes, source_label_name,
+            reference_label_bytes, reference_label_name,
+        )
         update_job(job_id, {
             "status": "completed",
             "registered_image_path": result["registered_image_path"],

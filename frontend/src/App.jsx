@@ -11,16 +11,16 @@ export default function App() {
   const [result, setResult] = useState(null);
   const previews = useRef({ source: null, reference: null });
 
-  const handleSubmit = async (sourceFile, referenceFile) => {
+  const handleSubmit = async (sourceFile, referenceFile, sourceLabelFile, referenceLabelFile) => {
     try {
       previews.current.source = URL.createObjectURL(sourceFile);
       previews.current.reference = URL.createObjectURL(referenceFile);
-      
+
       setStatus("processing");
       setError(null);
       setResult(null);
 
-      const res = await registerImages(sourceFile, referenceFile);
+      const res = await registerImages(sourceFile, referenceFile, sourceLabelFile, referenceLabelFile);
       if (res && res.job_id) {
         pollStatus(res.job_id);
       } else {

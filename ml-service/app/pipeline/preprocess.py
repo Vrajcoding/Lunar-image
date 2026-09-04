@@ -1,10 +1,10 @@
 import cv2
 import numpy as np
 
+from app.pipeline.loader import load_image
+
 def load_grayscale(path: str) -> np.ndarray:
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise ValueError(f"Could not read image from path: {path}")
+    img, _metadata = load_image(path)
     return img
 
 def normalize_illumination(img: np.ndarray) -> np.ndarray:

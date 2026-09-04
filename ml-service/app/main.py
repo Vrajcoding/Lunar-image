@@ -2,12 +2,14 @@ import time
 import os
 import uuid
 import csv
+import shutil
 import cv2
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
-from app.pipeline.preprocess import preprocess
+from app.pipeline.loader import load_image
+from app.pipeline.preprocess import normalize_illumination, denoise, build_pyramid
 from app.pipeline.features import detect_and_describe
 from app.pipeline.matching import match_descriptors, enforce_uniform_distribution
 from app.pipeline.geometry import estimate_homography, warp_image
@@ -32,40 +34,161 @@ if not os.path.exists(STORAGE_DIR):
         STORAGE_DIR = "./data"
         os.makedirs(STORAGE_DIR, exist_ok=True)
 
+# How long a job's output directory is kept before it is swept. The pipeline
+# writes source/reference/registered PNGs + matches.csv per job and nothing
+# else deletes them, so without this the shared /data volume grows without
+# bound. One hour is plenty for a demo (frontend downloads happen seconds
+# after the job completes); override with JOB_RETENTION_SEC=0 to disable.
+try:
+    JOB_RETENTION_SEC = int(os.getenv("JOB_RETENTION_SEC") or 60 * 60)
+except ValueError:
+    JOB_RETENTION_SEC = 60 * 60
+
+
+def sweep_old_jobs(now: float | None = None) -> int:
+    """
+    Delete job directories under STORAGE_DIR whose last modification time is
+    older than JOB_RETENTION_SEC. Best-effort: any error on a single directory
+    is swallowed so a stale lock or permission issue can never fail a request.
+    Returns the number of directories removed.
+    """
+    if JOB_RETENTION_SEC <= 0:
+        return 0
+    now = time.time() if now is None else now
+    removed = 0
+    try:
+        entries = os.listdir(STORAGE_DIR)
+    except OSError:
+        return 0
+    for name in entries:
+        path = os.path.join(STORAGE_DIR, name)
+        if not os.path.isdir(path):
+            continue
+        try:
+            if now - os.path.getmtime(path) > JOB_RETENTION_SEC:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "lunar-registration-ml"}
 
 
+_UPLOAD_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".xml", ".img", ".lbl"}
+_LABEL_EXTENSIONS = {".xml", ".lbl"}
+
+
+def _upload_ext(filename: str | None) -> str:
+    ext = os.path.splitext(filename or "")[1].lower()
+    return ext if ext in _UPLOAD_EXTENSIONS else ".png"
+
+
+def _safe_filename(filename: str | None, fallback: str) -> str:
+    """Basename to save an upload under, preserving the client's own filename
+    (sanitized) rather than a fixed name. A PDS4 .xml label references its
+    .img data file by the exact filename baked into the label's own content
+    at creation time — renaming the .img server-side (e.g. to a fixed
+    "source.img") breaks that reference and GDAL can no longer find the data,
+    even though both files still sit in the same directory."""
+    raw = (filename or "").strip().replace("\\", "/")
+    name = raw.rsplit("/", 1)[-1]
+    ext = os.path.splitext(name)[1].lower()
+    if not name or name in (".", "..") or ext not in _UPLOAD_EXTENSIONS:
+        return fallback
+    return name
+
+
+async def _save_side(job_dir: str, side: str, main: UploadFile, label: UploadFile | None):
+    """Saves one side's upload(s) (main image, plus an optional detached
+    label such as a PDS4 .xml or PDS3 .lbl) into their own subdirectory —
+    separate per side so a source/reference filename collision can't
+    overwrite one with the other — preserving each file's real name. Returns
+    (main_bytes, main_path, label_path_or_None)."""
+    side_dir = os.path.join(job_dir, side)
+    os.makedirs(side_dir, exist_ok=True)
+
+    main_name = _safe_filename(main.filename, f"{side}{_upload_ext(main.filename)}")
+    main_bytes = await main.read()
+    main_path = os.path.join(side_dir, main_name)
+    with open(main_path, "wb") as f:
+        f.write(main_bytes)
+
+    label_path = None
+    if label is not None:
+        label_bytes = await label.read()
+        if len(label_bytes) > 0:
+            label_name = _safe_filename(label.filename, f"{side}_label{_upload_ext(label.filename)}")
+            if label_name == main_name:
+                label_name = f"label_{label_name}"
+            label_path = os.path.join(side_dir, label_name)
+            with open(label_path, "wb") as f:
+                f.write(label_bytes)
+
+    return main_bytes, main_path, label_path
+
+
+def _pick_load_path(main_path: str, label_path: str | None) -> str:
+    """The spec rule is 'open the .xml, never the .img': if a detached label
+    was uploaded alongside the main file, load through the label directly.
+    Otherwise load the main file as before — a lone .img with no label still
+    falls through to loader.py's own sibling-search error, a lone
+    PNG/TIFF/.xml is used directly."""
+    if label_path and os.path.splitext(label_path)[1].lower() in _LABEL_EXTENSIONS:
+        return label_path
+    return main_path
+
+
 @app.post("/register")
-async def register(source: UploadFile = File(...), reference: UploadFile = File(...)):
+async def register(
+    source: UploadFile = File(...),
+    reference: UploadFile = File(...),
+    source_label: UploadFile | None = File(None),
+    reference_label: UploadFile | None = File(None),
+    band: int | None = Form(None),
+):
     t0 = time.time()
+
+    # Opportunistic cleanup of stale job output before writing a new one.
+    sweep_old_jobs()
+
     job_id = str(uuid.uuid4())
     job_dir = os.path.join(STORAGE_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
 
     # ── Save uploaded files ──────────────────────────────────────────────────
-    src_path = os.path.join(job_dir, "source.png")
-    ref_path = os.path.join(job_dir, "reference.png")
-
-    src_bytes = await source.read()
-    ref_bytes = await reference.read()
+    # source_label / reference_label are optional: a PDS4 product is two
+    # files (.img data + .xml detached label) and /register otherwise only
+    # takes one file per side, so real Chandrayaan-2 archive files could
+    # never be uploaded through this endpoint at all. A plain PNG/TIFF
+    # upload passes no label and behaves exactly as before.
+    src_bytes, src_main_path, src_label_path = await _save_side(job_dir, "source", source, source_label)
+    ref_bytes, ref_main_path, ref_label_path = await _save_side(job_dir, "reference", reference, reference_label)
 
     if len(src_bytes) == 0 or len(ref_bytes) == 0:
         raise HTTPException(status_code=400, detail="One or both uploaded files are empty.")
 
-    with open(src_path, "wb") as f:
-        f.write(src_bytes)
-    with open(ref_path, "wb") as f:
-        f.write(ref_bytes)
+    src_path = _pick_load_path(src_main_path, src_label_path)
+    ref_path = _pick_load_path(ref_main_path, ref_label_path)
 
-    # ── Preprocess (CLAHE + denoise + pyramid) ───────────────────────────────
+    # ── Load (format-aware) + preprocess (CLAHE + denoise + pyramid) ────────
+    # Reference loads first so its stretch bounds (for non-8-bit input) can be
+    # reused on the source — independent per-image percentile stretches would
+    # introduce an artificial intensity difference the matcher would read as
+    # a real radiometric difference between the two images.
     try:
-        src_pyr = preprocess(src_path, PYRAMID_LEVELS)
-        ref_pyr = preprocess(ref_path, PYRAMID_LEVELS)
+        ref_img_u8, ref_meta = load_image(ref_path, band=band)
+        src_img_u8, src_meta = load_image(
+            src_path, band=band, stretch_bounds=ref_meta.get("stretch_bounds")
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Could not decode image: {e}")
+
+    src_pyr = build_pyramid(denoise(normalize_illumination(src_img_u8)), PYRAMID_LEVELS)
+    ref_pyr = build_pyramid(denoise(normalize_illumination(ref_img_u8)), PYRAMID_LEVELS)
 
     src_img, ref_img = src_pyr[0], ref_pyr[0]
 
@@ -164,4 +287,5 @@ async def register(source: UploadFile = File(...), reference: UploadFile = File(
         "registered_image_path": out_img_path,
         "match_points_path": match_csv_path,
         "metrics": metrics,
+        "input_metadata": {"source": src_meta, "reference": ref_meta},
     })

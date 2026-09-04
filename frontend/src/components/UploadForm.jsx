@@ -3,11 +3,13 @@ import { useState } from "react";
 export default function UploadForm({ onSubmit }) {
   const [sourceFile, setSourceFile] = useState(null);
   const [referenceFile, setReferenceFile] = useState(null);
+  const [sourceLabelFile, setSourceLabelFile] = useState(null);
+  const [referenceLabelFile, setReferenceLabelFile] = useState(null);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (sourceFile && referenceFile) {
-      onSubmit(sourceFile, referenceFile);
+      onSubmit(sourceFile, referenceFile, sourceLabelFile, referenceLabelFile);
     }
   };
 
@@ -20,7 +22,7 @@ export default function UploadForm({ onSubmit }) {
             <input
               id="source-file-input"
               type="file"
-              accept="image/*"
+              accept="image/*,.tif,.tiff,.xml,.img,.lbl"
               onChange={(e) => setSourceFile(e.target.files[0] || null)}
             />
             <span className="dropzone-icon">📷</span>
@@ -38,7 +40,7 @@ export default function UploadForm({ onSubmit }) {
             <input
               id="reference-file-input"
               type="file"
-              accept="image/*"
+              accept="image/*,.tif,.tiff,.xml,.img,.lbl"
               onChange={(e) => setReferenceFile(e.target.files[0] || null)}
             />
             <span className="dropzone-icon">🗺️</span>
@@ -50,6 +52,37 @@ export default function UploadForm({ onSubmit }) {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Optional detached labels — only needed for a raw PDS4 (.img + .xml)
+            or PDS3 (.img + .lbl) pair. A single-file PNG/TIFF upload above
+            leaves both of these empty and nothing else changes. */}
+        <div className="upload-grid label-grid">
+          <label className="label-file-field">
+            <span>Source label (optional — PDS4 .xml / PDS3 .lbl)</span>
+            <input
+              id="source-label-file-input"
+              type="file"
+              accept=".xml,.lbl"
+              onChange={(e) => setSourceLabelFile(e.target.files[0] || null)}
+            />
+            {sourceLabelFile && (
+              <div className="file-preview-name">Selected: {sourceLabelFile.name}</div>
+            )}
+          </label>
+
+          <label className="label-file-field">
+            <span>Reference label (optional — PDS4 .xml / PDS3 .lbl)</span>
+            <input
+              id="reference-label-file-input"
+              type="file"
+              accept=".xml,.lbl"
+              onChange={(e) => setReferenceLabelFile(e.target.files[0] || null)}
+            />
+            {referenceLabelFile && (
+              <div className="file-preview-name">Selected: {referenceLabelFile.name}</div>
+            )}
+          </label>
         </div>
 
         <div className="submit-btn-wrapper">

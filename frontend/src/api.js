@@ -3,10 +3,14 @@ import axios from "axios";
 // Access base URL from environment or fallback to localhost:8000
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-export async function registerImages(sourceFile, referenceFile) {
+export async function registerImages(sourceFile, referenceFile, sourceLabelFile, referenceLabelFile) {
   const formData = new FormData();
   formData.append("source", sourceFile);
   formData.append("reference", referenceFile);
+  // Optional detached label (e.g. a PDS4 .xml next to a .img) — a plain
+  // PNG/TIFF upload sends neither and the backend behaves exactly as before.
+  if (sourceLabelFile) formData.append("source_label", sourceLabelFile);
+  if (referenceLabelFile) formData.append("reference_label", referenceLabelFile);
 
   const res = await axios.post(`${BASE_URL}/api/register`, formData, {
     headers: { "Content-Type": "multipart/form-data" },

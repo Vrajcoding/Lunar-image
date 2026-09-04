@@ -4,15 +4,21 @@ uvicorn[standard]>=0.30.6
 python-multipart>=0.0.9
 # Use headless build (no GUI) — works in Docker without a display
 opencv-contrib-python-headless>=4.10.0
-numpy>=1.26.4
+numpy>=2.0
 pydantic>=2.9.2
 pillow>=10.4.0
 
-# Optional / not currently imported by the pipeline. rasterio pulls a heavy
-# GDAL toolchain into the image and is the most common cause of a failed
-# Docker build, so it is disabled by default. Re-enable (and restore the
-# gdal apt packages in the Dockerfile) only if you add GeoTIFF I/O.
-# rasterio>=1.3.10
+# GeoTIFF / PDS4 (Chandrayaan-2) / PDS3 raster I/O for app/pipeline/loader.py.
+# Ships its own GDAL build (PDS4 driver included) — no system gdal-bin /
+# libgdal-dev needed. Pinned exactly since a GDAL-bundling wheel is the
+# likeliest thing to silently change behavior on an unpinned upgrade.
+# NOTE: rasterio dropped Python 3.11 wheels as of 1.5.x (Linux wheels start
+# at cp312) — since the Dockerfile's base image is python:3.11-slim, this is
+# pinned to the last release with a manylinux cp311 wheel, not the newest.
+# Bump this only together with the Dockerfile's Python version.
+rasterio==1.4.3
+
+# Optional / not currently imported by the pipeline.
 # scipy>=1.13.1
 # scikit-image>=0.24.0
 

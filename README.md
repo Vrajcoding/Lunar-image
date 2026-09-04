@@ -26,6 +26,11 @@ Run the single command below from the project root directory:
 docker compose up --build
 ```
 
+Host ports are read from the root [`.env`](.env) file (`FRONTEND_PORT=3000`,
+`BACKEND_PORT=8000`, `ML_SERVICE_PORT=8001`). `docker-compose.yml` falls back to
+those same defaults if `.env` is absent, so no setup is required — edit `.env`
+only if one of those ports is already taken on your machine.
+
 Access the services in your browser:
 - **Frontend App**: [http://localhost:3000](http://localhost:3000)
 - **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)

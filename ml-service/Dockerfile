@@ -2,7 +2,11 @@ FROM python:3.11-slim
 
 # System deps for OpenCV. The headless wheel still dlopen's libGL/libglib at
 # import time, so both are required even though there is no GUI.
-# (If you re-enable rasterio in requirements.txt, also add: gdal-bin libgdal-dev gcc g++)
+# rasterio (app/pipeline/loader.py) needs no apt packages here: its manylinux
+# wheel bundles its own GDAL build, including the PDS4 driver. Only add
+# gdal-bin/libgdal-dev if a future pip install of it has to build from source
+# (e.g. no wheel for the base image's Python version — see the pin note in
+# requirements.txt) — confirm by importing rasterio in the built image first.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \

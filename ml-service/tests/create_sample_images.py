@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 
+
 def make_lunar_base(seed: int = 42, size: int = 512) -> np.ndarray:
     """Generate a synthetic lunar surface with craters, ridges, and texture."""
     rng = np.random.default_rng(seed)
