@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Product_Observational xmlns="http://pds.nasa.gov/pds4/pds/v1">
+    <Identification_Area>
+        <logical_identifier>urn:isro:issdc:ch2:ohrc:ch2_ohr_20230812t110000_d</logical_identifier>
+        <version_id>1.0</version_id>
+        <title>Chandrayaan-2 OHRC Calibrated Lunar Observation Product</title>
+        <product_id>CH2_OHR_20230812T110000_D</product_id>
+    </Identification_Area>
+    <Observation_Area>
+        <Mission_Area>
+            <instrument_name>OHRC</instrument_name>
+            <sensor_type>Panchromatic</sensor_type>
+            <spatial_resolution unit="m/pixel">0.25</spatial_resolution>
+        </Mission_Area>
+        <Illumination_Geometry>
+            <solar_zenith_angle unit="deg">40.0</solar_zenith_angle>
+            <solar_azimuth_angle unit="deg">90.0</solar_azimuth_angle>
+            <solar_incidence_angle unit="deg">40.0</solar_incidence_angle>
+            <phase_angle unit="deg">30.0</phase_angle>
+        </Illumination_Geometry>
+    </Observation_Area>
+</Product_Observational>

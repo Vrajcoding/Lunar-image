@@ -1,0 +1,70 @@
+{
+  "status": "completed",
+  "method": "LoFTR",
+  "registered_image_path": "experiments/results/real_tests\\ohrc_source_vs_tmc_reference\\registered.png",
+  "difference_image_path": "experiments/results/real_tests\\ohrc_source_vs_tmc_reference\\difference.png",
+  "match_points_path": "experiments/results/real_tests\\ohrc_source_vs_tmc_reference\\matches.csv",
+  "metrics": {
+    "rmse_px": 0.9572,
+    "inlier_count": 440,
+    "inlier_ratio": 0.5836,
+    "uniformity_score": 0.9797,
+    "runtime_sec": 8.583,
+    "test_rmse_px": 0.9929,
+    "fit_rmse_px": 0.9572,
+    "total_matches": 754,
+    "match_count": 754,
+    "spatial_entropy": 4.0746,
+    "confidence_score": 0.7941,
+    "confidence_level": "HIGH",
+    "method": "LoFTR"
+  },
+  "input_metadata": {
+    "source": {
+      "source_format": "png",
+      "original_dtype": "uint8",
+      "band_count": 1,
+      "band_used": 1,
+      "subdataset_used": null,
+      "original_shape": [
+        600,
+        600
+      ],
+      "crs": null,
+      "transform": null,
+      "scaling_applied": "none",
+      "stretch_bounds": null,
+      "product_id": "urn:isro:issdc:ch2:ohrc:ch2_ohr_20230812t110000_d",
+      "instrument": "OHRC",
+      "sensor": null,
+      "acquisition_time": null,
+      "pixel_scale": 0.25,
+      "sun_azimuth": 90.0,
+      "sun_elevation": null,
+      "spacecraft_altitude": null
+    },
+    "reference": {
+      "source_format": "png",
+      "original_dtype": "uint8",
+      "band_count": 1,
+      "band_used": 1,
+      "subdataset_used": null,
+      "original_shape": [
+        600,
+        600
+      ],
+      "crs": null,
+      "transform": null,
+      "scaling_applied": "none",
+      "stretch_bounds": null,
+      "product_id": "urn:isro:issdc:ch2:tmc-2:ch2_tmc_20230812t110500_d",
+      "instrument": "TMC-2",
+      "sensor": null,
+      "acquisition_time": null,
+      "pixel_scale": 5.0,
+      "sun_azimuth": 110.0,
+      "sun_elevation": null,
+      "spacecraft_altitude": null
+    }
+  }
+}

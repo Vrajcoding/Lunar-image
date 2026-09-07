@@ -8,19 +8,39 @@ import "./styles.css";
 export default function App() {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
+  const [reason, setReason] = useState(null);
   const [result, setResult] = useState(null);
   const previews = useRef({ source: null, reference: null });
 
-  const handleSubmit = async (sourceFile, referenceFile, sourceLabelFile, referenceLabelFile) => {
+  const handleSubmit = async (
+    sourceFile,
+    referenceFile,
+    sourceLabelFile,
+    referenceLabelFile,
+    mode,
+    sourceSensor,
+    referenceSensor
+  ) => {
     try {
       previews.current.source = URL.createObjectURL(sourceFile);
       previews.current.reference = URL.createObjectURL(referenceFile);
 
       setStatus("processing");
       setError(null);
+      setReason(null);
       setResult(null);
 
-      const res = await registerImages(sourceFile, referenceFile, sourceLabelFile, referenceLabelFile);
+      const res = await registerImages(
+        sourceFile,
+        referenceFile,
+        sourceLabelFile,
+        referenceLabelFile,
+        null,
+        mode,
+        sourceSensor,
+        referenceSensor
+      );
+
       if (res && res.job_id) {
         pollStatus(res.job_id);
       } else {
@@ -46,7 +66,8 @@ export default function App() {
         } else if (data.status === "failed") {
           clearInterval(interval);
           setStatus("failed");
-          setError(data.error || "Image registration pipeline encountered an error.");
+          setReason(data.reason || "REGISTRATION_REJECTED");
+          setError(data.error || "Correspondence or geometric verification failed.");
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -54,25 +75,25 @@ export default function App() {
         setStatus("failed");
         setError("Error polling job status from backend.");
       }
-    }, 2000);
+    }, 1500);
   };
 
   return (
     <div className="app">
       <header className="app-header">
         <div className="brand-badge">
-          <span>🌔 Chandrayaan-2 TMC-2 / LROC AI Registration</span>
+          <span>🌔 SIH 2026 PS 26166 • Chandrayaan-2 LunarMatch AI</span>
         </div>
-        <h1>Lunar Image Registration System</h1>
+        <h1>Multi-Modal Lunar Image Registration</h1>
         <p>
-          Sub-pixel precision automated co-registration of Chandrayaan-2 lunar orbital imagery 
-          against high-resolution lunar reference basemaps.
+          Sub-pixel precision automated co-registration for Chandrayaan-2 orbital imagery (TMC-2, OHRC, IIRS)
+          under extreme illumination, scale, and cross-sensor variations.
         </p>
       </header>
 
       <main>
         <UploadForm onSubmit={handleSubmit} />
-        <ProgressStatus status={status} error={error} />
+        <ProgressStatus status={status} error={error} reason={reason} />
         {status === "completed" && result && (
           <ResultView
             result={result}
@@ -83,7 +104,7 @@ export default function App() {
       </main>
 
       <footer className="app-footer">
-        <p>Lunar Image Registration Platform • Built for SIH Hackathon • Powered by FastAPI & React</p>
+        <p>LunarMatch AI Platform • SIH 2026 PS 26166 • Powered by Deep LoFTR, SIFT Fallback & Sub-Pixel RANSAC</p>
       </footer>
     </div>
   );

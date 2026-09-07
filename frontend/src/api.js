@@ -1,42 +1,54 @@
 import axios from "axios";
 
-// Access base URL from environment or fallback to localhost:8000
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE = "";
 
-export async function registerImages(sourceFile, referenceFile, sourceLabelFile, referenceLabelFile) {
+export const registerImages = async (
+  sourceFile,
+  referenceFile,
+  sourceLabelFile = null,
+  referenceLabelFile = null,
+  band = null,
+  mode = "auto",
+  sourceSensor = "Auto / Unknown",
+  referenceSensor = "Auto / Unknown"
+) => {
   const formData = new FormData();
   formData.append("source", sourceFile);
   formData.append("reference", referenceFile);
-  // Optional detached label (e.g. a PDS4 .xml next to a .img) — a plain
-  // PNG/TIFF upload sends neither and the backend behaves exactly as before.
-  if (sourceLabelFile) formData.append("source_label", sourceLabelFile);
-  if (referenceLabelFile) formData.append("reference_label", referenceLabelFile);
 
-  const res = await axios.post(`${BASE_URL}/api/register`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+  if (sourceLabelFile) {
+    formData.append("source_label", sourceLabelFile);
+  }
+  if (referenceLabelFile) {
+    formData.append("reference_label", referenceLabelFile);
+  }
+  if (band !== null && band !== undefined) {
+    formData.append("band", band);
+  }
+  if (mode) {
+    formData.append("mode", mode);
+  }
+  if (sourceSensor) {
+    formData.append("source_sensor", sourceSensor);
+  }
+  if (referenceSensor) {
+    formData.append("reference_sensor", referenceSensor);
+  }
+
+  const res = await axios.post(`${API_BASE}/api/register`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
   });
-  return res.data; // { job_id, status }
-}
+  return res.data;
+};
 
-export async function getStatus(jobId) {
-  const res = await axios.get(`${BASE_URL}/api/status/${jobId}`);
-  return res.data; // { job_id, status }
-}
+export const getStatus = async (jobId) => {
+  const res = await axios.get(`${API_BASE}/api/status/${jobId}`);
+  return res.data;
+};
 
-export async function getResult(jobId) {
-  const res = await axios.get(`${BASE_URL}/api/result/${jobId}`);
-  const data = res.data;
-  
-  // Format URLs to absolute if they start with /
-  if (data.registered_image_url && data.registered_image_url.startsWith("/")) {
-    data.registered_image_url = `${BASE_URL}${data.registered_image_url}`;
-  }
-  if (data.match_points_url && data.match_points_url.startsWith("/")) {
-    data.match_points_url = `${BASE_URL}${data.match_points_url}`;
-  }
-  return data;
-}
-
-export function downloadUrl(jobId, fileType) {
-  return `${BASE_URL}/api/download/${jobId}/${fileType}`;
-}
+export const getResult = async (jobId) => {
+  const res = await axios.get(`${API_BASE}/api/result/${jobId}`);
+  return res.data;
+};

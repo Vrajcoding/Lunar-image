@@ -9,13 +9,12 @@ Dispatches by file extension:
   .img                        -> redirected to a sibling .xml (PDS4) or .lbl
                                   (PDS3) label in the same directory
 
-Every raised error is a ValueError so callers that already catch ValueError
-around the old cv2.imread path (see app/main.py) keep working unchanged.
+Extracts Chandrayaan-2 mission metadata (payloads: OHRC, TMC-2, IIRS) where present.
 """
 import logging
 import os
 import re
-
+import xml.etree.ElementTree as ET
 import cv2
 import numpy as np
 
@@ -36,8 +35,7 @@ _CAMERA_MAP = {"f": "fore", "n": "nadir", "a": "aft", "p": "panchromatic"}
 
 
 def _parse_product_id(path: str) -> dict | None:
-    """Parse the ch2_<inst>_<phase><datatype><camera>_<timestamp>_... filename
-    convention. Returns None for non-conforming names rather than raising."""
+    """Parse the ch2_<inst>_<phase><datatype><camera>_<timestamp>_... filename convention."""
     name = os.path.basename(path)
     m = _CH2_FILENAME_RE.match(name)
     if not m:
@@ -55,14 +53,68 @@ def _parse_product_id(path: str) -> dict | None:
     }
 
 
-def _stretch_to_uint8(arr: np.ndarray, bounds: tuple[float, float] | None):
-    """Convert a non-8-bit array to uint8. Returns (uint8_array, method, bounds_used).
+def _extract_xml_metadata(path: str) -> dict:
+    """Extract PDS4 XML metadata fields safely if file is an XML label."""
+    res = {
+        "instrument": None,
+        "sensor": None,
+        "product_id": None,
+        "acquisition_time": None,
+        "pixel_scale": None,
+        "sun_azimuth": None,
+        "sun_elevation": None,
+        "spacecraft_altitude": None,
+    }
+    if not path.lower().endswith(".xml") or not os.path.isfile(path):
+        return res
 
-    A 2-98 percentile linear stretch is used instead of a naive bit-shift or
-    full-range min/max: lunar scenes have shadowed crater floors and sunlit
-    rims at opposite histogram extremes, and a full-range map wastes most of
-    the 8-bit space on values that never occur in the scene.
-    """
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+
+        # Search case-insensitively / namespace-insensitively
+        for elem in root.iter():
+            tag = elem.tag.split("}")[-1].lower() if "}" in elem.tag else elem.tag.lower()
+            text = (elem.text or "").strip()
+            if not text:
+                continue
+
+            if tag in ("instrument_name", "instrument_id", "observing_system_name") and res["instrument"] is None:
+                res["instrument"] = text
+            elif tag in ("sensor_name", "camera_name", "detector_id") and res["sensor"] is None:
+                res["sensor"] = text
+            elif tag in ("logical_identifier", "product_id", "title") and res["product_id"] is None:
+                res["product_id"] = text
+            elif tag in ("start_date_time", "start_time", "acquisition_date_time") and res["acquisition_time"] is None:
+                res["acquisition_time"] = text
+            elif tag in ("pixel_resolution", "resolution", "pixel_scale", "spatial_resolution") and res["pixel_scale"] is None:
+                try:
+                    res["pixel_scale"] = float(text.split()[0])
+                except Exception:
+                    res["pixel_scale"] = text
+            elif tag in ("sun_azimuth", "solar_azimuth_angle") and res["sun_azimuth"] is None:
+                try:
+                    res["sun_azimuth"] = float(text)
+                except Exception:
+                    pass
+            elif tag in ("sun_elevation", "solar_elevation_angle", "incidence_angle") and res["sun_elevation"] is None:
+                try:
+                    res["sun_elevation"] = float(text)
+                except Exception:
+                    pass
+            elif tag in ("spacecraft_altitude", "altitude", "spacecraft_distance") and res["spacecraft_altitude"] is None:
+                try:
+                    res["spacecraft_altitude"] = float(text.split()[0])
+                except Exception:
+                    res["spacecraft_altitude"] = text
+    except Exception as e:
+        logger.debug("Non-fatal: could not extract extended XML metadata from %s: %s", path, e)
+
+    return res
+
+
+def _stretch_to_uint8(arr: np.ndarray, bounds: tuple[float, float] | None):
+    """Convert a non-8-bit array to uint8. Returns (uint8_array, method, bounds_used)."""
     if arr.dtype == np.uint8:
         return arr, "none", None
 
@@ -73,8 +125,6 @@ def _stretch_to_uint8(arr: np.ndarray, bounds: tuple[float, float] | None):
         lo, hi = (float(v) for v in np.percentile(arr, [2, 98]))
         method = "percentile_2_98"
         if hi <= lo:
-            # Degenerate histogram (e.g. a near-constant test fixture) — fall
-            # back to the actual min/max rather than dividing by zero.
             lo, hi = float(arr.min()), float(arr.max())
             method = "minmax"
             if hi <= lo:
@@ -90,6 +140,11 @@ def _load_via_cv2(path: str, ext: str, product_id: dict | None):
     if img is None:
         raise ValueError(f"Could not read image from path: {path}")
     fmt = "jpeg" if ext in (".jpg", ".jpeg") else ext.lstrip(".")
+    
+    inst = product_id.get("instrument") if product_id else None
+    sensor = product_id.get("camera") if product_id else None
+    acq_time = product_id.get("timestamp") if product_id else None
+
     metadata = {
         "source_format": fmt,
         "original_dtype": str(img.dtype),
@@ -102,13 +157,19 @@ def _load_via_cv2(path: str, ext: str, product_id: dict | None):
         "scaling_applied": "none",
         "stretch_bounds": None,
         "product_id": product_id,
+        "instrument": inst,
+        "sensor": sensor,
+        "acquisition_time": acq_time,
+        "pixel_scale": None,
+        "sun_azimuth": None,
+        "sun_elevation": None,
+        "spacecraft_altitude": None,
     }
     return img, metadata
 
 
 def _open_raster_dataset(path: str, rasterio_mod):
-    """Open path with rasterio, following into the first subdataset if the
-    top-level dataset exposes zero bands (a label with multiple Array objects)."""
+    """Open path with rasterio, following into the first subdataset if needed."""
     ds = rasterio_mod.open(path)
     if ds.count == 0:
         subs = list(ds.subdatasets)
@@ -179,6 +240,11 @@ def _load_via_rasterio(
     else:
         source_format = ext.lstrip(".")
 
+    xml_meta = _extract_xml_metadata(path)
+    inst = xml_meta["instrument"] or (product_id.get("instrument") if product_id else None)
+    sensor = xml_meta["sensor"] or (product_id.get("camera") if product_id else None)
+    acq_time = xml_meta["acquisition_time"] or (product_id.get("timestamp") if product_id else None)
+
     metadata = {
         "source_format": source_format,
         "original_dtype": original_dtype,
@@ -191,15 +257,18 @@ def _load_via_rasterio(
         "scaling_applied": scaling_applied,
         "stretch_bounds": bounds_used,
         "product_id": product_id,
+        "instrument": inst,
+        "sensor": sensor,
+        "acquisition_time": acq_time,
+        "pixel_scale": xml_meta["pixel_scale"],
+        "sun_azimuth": xml_meta["sun_azimuth"],
+        "sun_elevation": xml_meta["sun_elevation"],
+        "spacecraft_altitude": xml_meta["spacecraft_altitude"],
     }
     return img_u8, metadata
 
 
 def _load_img_redirect(path: str, band: int | None, stretch_bounds: tuple[float, float] | None):
-    """A raw .img carries no self-describing header — the label next to it
-    (PDS4 .xml, or PDS3 .lbl) says how to interpret the bytes. Redirect to
-    whichever sibling label exists; the user will naturally point at the
-    .img, so this must not require them to know about the label file."""
     stem, _ = os.path.splitext(path)
     xml_candidates = [stem + ".xml", stem + ".XML"]
     for candidate in xml_candidates:
@@ -227,19 +296,6 @@ def load_image(
 ) -> tuple[np.ndarray, dict]:
     """
     Returns (uint8 single-channel 2D array, metadata dict).
-
-    metadata keys (always present, None where unknown):
-      source_format    : "png" | "jpeg" | "bmp" | "tiff" | "geotiff" | "pds4" | "pds3"
-      original_dtype    : e.g. "uint16"
-      band_count        : int
-      band_used         : int (1-indexed)
-      subdataset_used   : str | None
-      original_shape    : (h, w)
-      crs               : CRS string or None
-      transform         : 6-tuple affine or None
-      scaling_applied   : "none" | "percentile_2_98" | "minmax"
-      stretch_bounds    : (lo, hi) actually used, or None
-      product_id        : dict parsed from a ch2_* filename, else None
     """
     ext = os.path.splitext(path)[1].lower()
     product_id = _parse_product_id(path)
